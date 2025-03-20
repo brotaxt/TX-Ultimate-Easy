@@ -884,6 +884,7 @@ switch:
     output: output_relay_1
     platform: output
     restore_mode: ${RELAY_RESTORE_MODE}
+    interlock: &interlock_group [output_relay_1, output_relay_2]
     internal: true
     on_turn_on:
       then:
@@ -906,6 +907,7 @@ switch:
     output: output_relay_2
     platform: output
     restore_mode: ${RELAY_RESTORE_MODE}
+    interlock: *interlock_group
     internal: true
     on_turn_on:
       then:
