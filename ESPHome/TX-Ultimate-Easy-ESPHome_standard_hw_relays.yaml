@@ -426,9 +426,11 @@ output:
   - id: output_relay_1
     platform: gpio
     pin: GPIO18
+    interlock: &interlock_group [relay_1, relay_2]    
   - id: output_relay_2
     platform: gpio
     pin: GPIO17
+    interlock: *interlock_group
   - id: output_relay_3
     platform: gpio
     pin: GPIO27
@@ -884,7 +886,6 @@ switch:
     output: output_relay_1
     platform: output
     restore_mode: ${RELAY_RESTORE_MODE}
-    interlock: &interlock_group [output_relay_1, output_relay_2]
     internal: true
     on_turn_on:
       then:
@@ -907,7 +908,6 @@ switch:
     output: output_relay_2
     platform: output
     restore_mode: ${RELAY_RESTORE_MODE}
-    interlock: *interlock_group
     internal: true
     on_turn_on:
       then:
