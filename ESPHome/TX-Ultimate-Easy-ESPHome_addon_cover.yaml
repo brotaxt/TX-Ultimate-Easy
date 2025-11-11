@@ -111,33 +111,32 @@ script:
     mode: restart
     then:
       - lambda: |-
-          if (id(cover_roller).current_operation == COVER_OPERATION_IDLE) {
-            id(cover_roller).make_call().set_command_open().perform();
+          // Template Cover Toggle: start opening if idle, else stop
+          if (id(cover_motion_direction) == 0) {
+            id(cover_open)->execute();            // setzt direction=1
+            id(cover_motion_loop)->execute();     // startet Bewegungsschleife
           } else {
-            id(cover_roller).make_call().set_command_stop().perform();
-            // If we stop mid-travel, attempt calibration end using partial (ignored if not full)
-            id(cover_calibration_attempt_end)->execute();
+            id(cover_stop)->execute();
           }
       - script.execute: cover_led_refresh
-      - script.execute: cover_led_poll
       - lambda: |-
-          // If transition started, mark start time
-          if (id(cover_roller).current_operation != COVER_OPERATION_IDLE)
+          if (id(cover_motion_direction) != 0)
             id(cover_last_operation_start) = millis();
       - script.execute: cover_calibration_mark_start
   - id: cover_close_action
     mode: restart
     then:
       - lambda: |-
-          if (id(cover_roller).current_operation == COVER_OPERATION_IDLE) {
-            id(cover_roller).make_call().set_command_close().perform();
+          // Template Cover Toggle: start closing if idle, else stop
+          if (id(cover_motion_direction) == 0) {
+            id(cover_close)->execute();           // setzt direction=-1
+            id(cover_motion_loop)->execute();
           } else {
-            id(cover_roller).make_call().set_command_stop().perform();
+            id(cover_stop)->execute();
           }
       - script.execute: cover_led_refresh
-      - script.execute: cover_led_poll
       - lambda: |-
-          if (id(cover_roller).current_operation != COVER_OPERATION_IDLE)
+          if (id(cover_motion_direction) != 0)
             id(cover_last_operation_start) = millis();
       - script.execute: cover_calibration_mark_start
 
@@ -148,15 +147,12 @@ script:
   - id: !extend touch_on_press
     then:
       - lambda: |-
-          ESP_LOGD("cover.touch", "touch_on_press: position=%u gang_count=%u enable_subst='${ENABLE_COVER_MODE}'", position, id(gang_count));
+          ESP_LOGD("cover.touch", "touch_on_press: pos=%u gang=%u", position, id(gang_count));
       - if:
           condition:
             lambda: |-
-              // ENABLE_COVER_MODE ist eine Substitution (String), direkte Pointer-Vergleiche vermeiden.
-              // Wir interpretieren jeden Wert != 'false' als aktiv.
-              const char* enabled = "${ENABLE_COVER_MODE}"; // wird zur Compilezeit ersetzt
-              bool cover_enabled = !(strcmp(enabled, "false") == 0 || strcmp(enabled, "0") == 0);
-              return cover_enabled && id(gang_count) == 2;
+              // Vereinfachte Aktivierungslogik: ab 2 Gangs aktiv
+              return id(gang_count) >= 2;
           then:
             - if:
                 condition:
@@ -166,9 +162,9 @@ script:
                 else:
                   - script.execute: cover_close_action
             - script.execute: cover_led_refresh
-        else:
-          - lambda: |-
-              ESP_LOGD("cover.touch", "Cover gating condition FALSE (cover_enabled or gang_count mismatch). No action.");
+          else:
+            - lambda: |-
+                ESP_LOGD("cover.touch", "Not active (gang_count < 2)");
 
   # LED progress refresh (EU format only currently) - lights up right side proportionally.
   - id: cover_led_refresh
