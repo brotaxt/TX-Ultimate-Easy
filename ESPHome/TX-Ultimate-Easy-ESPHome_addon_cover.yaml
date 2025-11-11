@@ -16,13 +16,15 @@
 substitutions:
   ENABLE_COVER_MODE: 'true'
   COVER_NAME: 'Roller Shutter'
-  COVER_OPEN_DURATION: 25s      # Adjust to your real open time
-  COVER_CLOSE_DURATION: 25s     # Adjust to your real close time
-  COVER_LED_COLOR_OPEN: '{0,255,0}'      # RGB when open portion
-  COVER_LED_COLOR_CLOSE: '{255,0,0}'     # RGB when closed portion
-  COVER_LED_BRIGHTNESS: '0.6'            # Brightness for progress bar
-  COVER_LED_UPDATE_INTERVAL: 500ms       # Refresh rate
-  COVER_CALIBRATION_MIN_DURATION_MS: '3000' # Minimal plausible full travel time to accept measurement
+  COVER_OPEN_DURATION: 25s      # (Legacy – kann entfernt werden)
+  COVER_CLOSE_DURATION: 25s
+  COVER_OPEN_DURATION_MS: '25000'
+  COVER_CLOSE_DURATION_MS: '25000'
+  COVER_LED_COLOR_OPEN: '{0,255,0}'
+  COVER_LED_COLOR_CLOSE: '{255,0,0}'
+  COVER_LED_BRIGHTNESS: '0.6'
+  COVER_LED_UPDATE_INTERVAL: 500ms
+  COVER_CALIBRATION_MIN_DURATION_MS: '3000'
 
 globals:
   # Persistent pseudo-position (0.0 closed .. 1.0 open)
@@ -66,26 +68,20 @@ esphome:
           id(cover_roller).publish_state();
       - script.execute: cover_led_refresh
 
-# Time-based cover entity using relay 1 (open) and relay 2 (close)
+# Template-basiertes Cover mit dynamischer Position
 cover:
-  - platform: time_based
+  - platform: template
     id: cover_roller
     name: ${COVER_NAME}
-    assumed_state: false
-    # When moving update LED bar immediately
+    optimistic: true
+    lambda: |-
+      return id(cover_pos_saved);
     open_action:
       - script.execute: cover_open
-      - script.execute: cover_led_refresh
-      - script.execute: cover_led_poll
-    open_duration: ${COVER_OPEN_DURATION}
     close_action:
       - script.execute: cover_close
-      - script.execute: cover_led_refresh
-      - script.execute: cover_led_poll
-    close_duration: ${COVER_CLOSE_DURATION}
     stop_action:
       - script.execute: cover_stop
-      - script.execute: cover_led_refresh
 
 script:
   # Basic relay driving scripts
@@ -112,10 +108,7 @@ script:
       - switch.turn_off: sw_relay_2
       - script.execute: cover_calibration_attempt_end
 
-  # Toggle style actions (like reference implementation): tap performs open/close if idle, else stop
-      - lambda: |-
-          id(cover_last_operation_start) = millis();
-      - script.execute: cover_calibration_mark_start
+  # Toggle Style Aktion: tippen startet / stoppt
   - id: cover_open_action
     mode: restart
     then:
@@ -203,18 +196,7 @@ script:
           }
           strip->schedule_show();
 
-  # Periodic refresh while moving (optional polling)
-  - id: cover_led_poll
-    mode: restart
-    then:
-      - while:
-          condition:
-            lambda: |-
-              return id(cover_roller).current_operation != COVER_OPERATION_IDLE;
-          then:
-            - script.execute: cover_led_refresh
-            - delay: ${COVER_LED_UPDATE_INTERVAL}
-      - script.execute: cover_calibration_attempt_end  # When loop exits (idle)
+  # (Altes Polling entfernt – ersetzt durch cover_motion_loop)
 
   # Mark start of potential full-travel calibration
   - id: cover_calibration_mark_start
