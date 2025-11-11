@@ -23,6 +23,7 @@ substitutions:
   COVER_LED_BRIGHTNESS: '0.6'            # Brightness for progress bar
   COVER_LED_UPDATE_INTERVAL: 500ms       # Refresh rate
   COVER_CALIBRATION_MIN_DURATION_MS: '3000' # Minimal plausible full travel time to accept measurement
+  COVER_TOUCH_BUTTON: '1'
 
 globals:
   # Persistent pseudo-position (0.0 closed .. 1.0 open)
@@ -156,12 +157,15 @@ script:
   - id: !extend touch_on_press
     then:
       - lambda: |-
-          ESP_LOGD("cover.touch", "touch_on_press: pos=%u gang=%u", position, id(gang_count));
+          ESP_LOGD("cover.touch", "touch_on_press: btn=%u pos=%u gang=%u", button, position, id(gang_count));
       - if:
           condition:
             lambda: |-
-              // Vereinfachte Aktivierungslogik: ab 2 Gangs aktiv
-              return id(gang_count) >= 2;
+              // Aktiv nur wenn Cover-Modus aktiv, genug Gangs und spezifischer Button
+              if (strcmp("${ENABLE_COVER_MODE}", "true") != 0) return false;
+              if (id(gang_count) < 2) return false;
+              if (button != ${COVER_TOUCH_BUTTON}) return false;
+              return true;
           then:
             - if:
                 condition:
@@ -173,50 +177,39 @@ script:
             - script.execute: cover_led_refresh
           else:
             - lambda: |-
-                ESP_LOGD("cover.touch", "Not active (gang_count < 2)");
+                ESP_LOGD("cover.touch", "Cover ignoriert (Button/Gang/Mode unpassend)");
 
   # LED progress refresh (EU format only currently) - lights up right side proportionally.
   - id: cover_led_refresh
     mode: restart
     then:
       - lambda: |-
-          // Determine model format to choose appropriate light partition.
-          // We assume EU format uses light_eu_right segment similar to right side indicator.
-          // Fallback: use full light if segment not available.
-          float pos = id(cover_pos_saved); // 0.0 closed, 1.0 open
+          // Vereinfachte Pixel-Bar: Anteil offene LEDs leuchten in "open" Farbe, rest schwach in "close"
+          float pos = id(cover_pos_saved); // 0.0 geschlossen, 1.0 offen
           const int total_pixels = 8;
-          // Farben aus Globals
+          int lit = (int) roundf(pos * total_pixels);
+          if (lit > total_pixels) lit = total_pixels;
           uint8_t r_open = (uint8_t) id(cover_led_color_open)[0];
           uint8_t g_open = (uint8_t) id(cover_led_color_open)[1];
           uint8_t b_open = (uint8_t) id(cover_led_color_open)[2];
           uint8_t r_close = (uint8_t) id(cover_led_color_close)[0];
           uint8_t g_close = (uint8_t) id(cover_led_color_close)[1];
           uint8_t b_close = (uint8_t) id(cover_led_color_close)[2];
-
-          // Gradient Logik: Jeder Pixel bekommt Anteil 'fill' in Abhängigkeit davon, wie weit die Öffnung über seinen Index hinaus geht.
-          // coverage = wie viele Pixel wären bei harter Darstellung vollständig "offen".
-          float coverage = pos * total_pixels; // z.B. 2.3 bedeutet Pixel 0 und 1 voll offen, Pixel 2 teil-offen
-
           for (int i=0;i<total_pixels;i++) {
-            // fill: 0.0 (geschlossen Farbe) .. 1.0 (geöffnete Farbe), mit fließendem Übergang im Übergangspixel
-            float fill = coverage - i; // Anteil über Pixelgrenze hinaus
-            if (fill < 0.0f) fill = 0.0f;
-            if (fill > 1.0f) fill = 1.0f;
-            // Interpolation zwischen geschlossen und offen
-            float r = r_close + (r_open - r_close) * fill;
-            float g = g_close + (g_open - g_close) * fill;
-            float b = b_close + (b_open - b_close) * fill;
-
+            bool is_lit = i < lit;
+            float r = is_lit ? r_open : r_close * 0.15f;
+            float g = is_lit ? g_open : g_close * 0.15f;
+            float b = is_lit ? b_open : b_close * 0.15f;
             light::LightState* target = nullptr;
             switch(i){
-          case 0: target = id(light_27); break;
-          case 1: target = id(light_26); break;
-          case 2: target = id(light_25); break;
-          case 3: target = id(light_24); break;
-          case 4: target = id(light_23); break;
-          case 5: target = id(light_22); break;
-          case 6: target = id(light_21); break;
-          case 7: target = id(light_20); break;
+              case 0: target = id(light_27); break;
+              case 1: target = id(light_26); break;
+              case 2: target = id(light_25); break;
+              case 3: target = id(light_24); break;
+              case 4: target = id(light_23); break;
+              case 5: target = id(light_22); break;
+              case 6: target = id(light_21); break;
+              case 7: target = id(light_20); break;
             }
             if (!target) continue;
             auto c = target->make_call();
