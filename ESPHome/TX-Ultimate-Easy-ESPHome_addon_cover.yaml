@@ -66,26 +66,20 @@ esphome:
           id(cover_roller).publish_state();
       - script.execute: cover_led_refresh
 
-# Time-based cover entity using relay 1 (open) and relay 2 (close)
+# Template Cover (ersetzt time_based)
 cover:
-  - platform: time_based
+  - platform: template
     id: cover_roller
     name: ${COVER_NAME}
-    assumed_state: false
-    # When moving update LED bar immediately
+    optimistic: true
+    lambda: |-
+      return id(cover_pos_saved);
     open_action:
       - script.execute: cover_open
-      - script.execute: cover_led_refresh
-      - script.execute: cover_led_poll
-    open_duration: ${COVER_OPEN_DURATION}
     close_action:
       - script.execute: cover_close
-      - script.execute: cover_led_refresh
-      - script.execute: cover_led_poll
-    close_duration: ${COVER_CLOSE_DURATION}
     stop_action:
       - script.execute: cover_stop
-      - script.execute: cover_led_refresh
 
 script:
   # Basic relay driving scripts
@@ -112,10 +106,7 @@ script:
       - switch.turn_off: sw_relay_2
       - script.execute: cover_calibration_attempt_end
 
-  # Toggle style actions (like reference implementation): tap performs open/close if idle, else stop
-      - lambda: |-
-          id(cover_last_operation_start) = millis();
-      - script.execute: cover_calibration_mark_start
+  # Toggle style actions: Start/Stop
   - id: cover_open_action
     mode: restart
     then:
@@ -156,6 +147,8 @@ script:
 # Uses touch_on_press script (parameters: button, position). Position range 0..${TOUCH_POSITION_MAX_VALUE} (from core touch package).
   - id: !extend touch_on_press
     then:
+      - lambda: |-
+          ESP_LOGD("cover.touch", "touch_on_press: position=%u gang_count=%u enable_subst='${ENABLE_COVER_MODE}'", position, id(gang_count));
       - if:
           condition:
             lambda: |-
@@ -173,6 +166,9 @@ script:
                 else:
                   - script.execute: cover_close_action
             - script.execute: cover_led_refresh
+        else:
+          - lambda: |-
+              ESP_LOGD("cover.touch", "Cover gating condition FALSE (cover_enabled or gang_count mismatch). No action.");
 
   # LED progress refresh (EU format only currently) - lights up right side proportionally.
   - id: cover_led_refresh
@@ -223,18 +219,34 @@ script:
             c.perform();
           }
 
-  # Periodic refresh while moving (optional polling)
-  - id: cover_led_poll
+  # Bewegungsschleife statt altem Polling
+  - id: cover_motion_loop
     mode: restart
     then:
       - while:
           condition:
             lambda: |-
-              return id(cover_roller).current_operation != COVER_OPERATION_IDLE;
+              return id(cover_motion_direction) != 0;
           then:
+            - lambda: |-
+                uint32_t now = millis();
+                uint32_t elapsed = now - id(cover_last_operation_start);
+                uint32_t duration = (id(cover_motion_direction) == 1)
+                                   ? (id(cover_open_duration_measured) != 0 ? id(cover_open_duration_measured) : 25000)
+                                   : (id(cover_close_duration_measured) != 0 ? id(cover_close_duration_measured) : 25000);
+                float progress = (float) elapsed / (float) duration;
+                if (progress > 1.0f) progress = 1.0f;
+                if (id(cover_motion_direction) == 1) {
+                  id(cover_pos_saved) = progress;
+                } else if (id(cover_motion_direction) == -1) {
+                  id(cover_pos_saved) = 1.0f - progress;
+                }
+                id(cover_roller).position = id(cover_pos_saved);
+                id(cover_roller).publish_state();
+                if (progress >= 1.0f) id(cover_motion_direction) = 0;
             - script.execute: cover_led_refresh
             - delay: ${COVER_LED_UPDATE_INTERVAL}
-      - script.execute: cover_calibration_attempt_end  # When loop exits (idle)
+      - script.execute: cover_calibration_attempt_end
 
   # Mark start of potential full-travel calibration
   - id: cover_calibration_mark_start
