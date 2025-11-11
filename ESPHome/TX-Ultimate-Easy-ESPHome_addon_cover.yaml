@@ -158,7 +158,12 @@ script:
     then:
       - if:
           condition:
-            lambda: 'return ${ENABLE_COVER_MODE} == "true" && id(gang_count) == 2;'
+            lambda: |-
+              // ENABLE_COVER_MODE ist eine Substitution (String), direkte Pointer-Vergleiche vermeiden.
+              // Wir interpretieren jeden Wert != 'false' als aktiv.
+              const char* enabled = "${ENABLE_COVER_MODE}"; // wird zur Compilezeit ersetzt
+              bool cover_enabled = !(strcmp(enabled, "false") == 0 || strcmp(enabled, "0") == 0);
+              return cover_enabled && id(gang_count) == 2;
           then:
             - if:
                 condition:
@@ -177,31 +182,46 @@ script:
           // Determine model format to choose appropriate light partition.
           // We assume EU format uses light_eu_right segment similar to right side indicator.
           // Fallback: use full light if segment not available.
-          auto cover = id(cover_roller);
-          float pos = cover->position; // 0.0 closed, 1.0 open (restored at boot)
-          // Map position (0..1) onto 8 pixels (similar to reference) on right side EU: LEDs index set (approx.)
-          const int total_pixels = 8; // tune based on actual hardware mapping
-          int lit = (int) round(pos * total_pixels);
-          // Build colors
+          float pos = id(cover_pos_saved); // 0.0 closed, 1.0 open
+          const int total_pixels = 8;
+          // Farben aus Globals
           uint8_t r_open = (uint8_t) id(cover_led_color_open)[0];
           uint8_t g_open = (uint8_t) id(cover_led_color_open)[1];
           uint8_t b_open = (uint8_t) id(cover_led_color_open)[2];
           uint8_t r_close = (uint8_t) id(cover_led_color_close)[0];
           uint8_t g_close = (uint8_t) id(cover_led_color_close)[1];
           uint8_t b_close = (uint8_t) id(cover_led_color_close)[2];
-          // Access underlying full strip
-          auto *strip = id(light_full).get_addressable_();
-          if (!strip) return;
-          // Choose pixel indices (example mapping: right side uses indices 27,26,...,20 then 0..5 in base config; adapt minimal subset)
-          int pixel_map[8] = {27,26,25,24,23,22,21,20};
+
+          // Gradient Logik: Jeder Pixel bekommt Anteil 'fill' in Abhängigkeit davon, wie weit die Öffnung über seinen Index hinaus geht.
+          // coverage = wie viele Pixel wären bei harter Darstellung vollständig "offen".
+          float coverage = pos * total_pixels; // z.B. 2.3 bedeutet Pixel 0 und 1 voll offen, Pixel 2 teil-offen
+
           for (int i=0;i<total_pixels;i++) {
-            if (i < lit) {
-              strip->set(pixel_map[i], light::ESPColor(r_open, g_open, b_open));
-            } else {
-              strip->set(pixel_map[i], light::ESPColor(r_close, g_close, b_close));
+            // fill: 0.0 (geschlossen Farbe) .. 1.0 (geöffnete Farbe), mit fließendem Übergang im Übergangspixel
+            float fill = coverage - i; // Anteil über Pixelgrenze hinaus
+            if (fill < 0.0f) fill = 0.0f;
+            if (fill > 1.0f) fill = 1.0f;
+            // Interpolation zwischen geschlossen und offen
+            float r = r_close + (r_open - r_close) * fill;
+            float g = g_close + (g_open - g_close) * fill;
+            float b = b_close + (b_open - b_close) * fill;
+
+            light::LightState* target = nullptr;
+            switch(i){
+              case 0: target = &id(light_27); break;
+              case 1: target = &id(light_26); break;
+              case 2: target = &id(light_25); break;
+              case 3: target = &id(light_24); break;
+              case 4: target = &id(light_23); break;
+              case 5: target = &id(light_22); break;
+              case 6: target = &id(light_21); break;
+              case 7: target = &id(light_20); break;
             }
+            if (!target) continue;
+            auto c = target->make_call();
+            c.set_rgb(r/255.0f,g/255.0f,b/255.0f).set_brightness(${COVER_LED_BRIGHTNESS});
+            c.perform();
           }
-          strip->schedule_show();
 
   # Periodic refresh while moving (optional polling)
   - id: cover_led_poll
