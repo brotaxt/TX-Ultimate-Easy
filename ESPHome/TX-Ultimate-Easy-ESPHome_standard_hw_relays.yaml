@@ -1821,6 +1821,11 @@ switch:
       then:
         - if:
             condition:
+              - switch.is_on: sw_relay_2
+            then:
+              - switch.turn_off: sw_relay_2   # Interlock: ensure only one direction active
+        - if:
+            condition:
               - light.is_off: light_output_1
             then:
               light.turn_on: light_output_1
@@ -1844,6 +1849,11 @@ switch:
         - script.execute: show_relay_status
     on_turn_on:
       then:
+        - if:
+            condition:
+              - switch.is_on: sw_relay_1
+            then:
+              - switch.turn_off: sw_relay_1   # Interlock: ensure only one direction active
         - if:
             condition:
               - light.is_off: light_output_2

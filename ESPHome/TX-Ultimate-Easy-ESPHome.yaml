@@ -15,5 +15,6 @@ packages:
   # yamllint disable rule:colons
   core:     !include TX-Ultimate-Easy-ESPHome_core.yaml
   standard: !include TX-Ultimate-Easy-ESPHome_standard.yaml
+  cover:    !include TX-Ultimate-Easy-ESPHome_addon_cover.yaml
   # yamllint enable rule:colons
 ...
