@@ -53,6 +53,11 @@ globals:
     type: int [3]
     restore_value: false
     initial_value: ${COVER_LED_COLOR_CLOSE}
+   # Bewegung: Richtung (1=open, -1=close, 0=idle)
+   - id: cover_motion_direction
+     type: int
+     restore_value: false
+     initial_value: '0'
 
 esphome:
   on_boot:
