@@ -53,11 +53,11 @@ globals:
     type: int [3]
     restore_value: false
     initial_value: ${COVER_LED_COLOR_CLOSE}
-   # Bewegung: Richtung (1=open, -1=close, 0=idle)
-   - id: cover_motion_direction
-     type: int
-     restore_value: false
-     initial_value: '0'
+  # Bewegung: Richtung (1=open, -1=close, 0=idle)
+  - id: cover_motion_direction
+    type: int
+    restore_value: false
+    initial_value: '0'
 
 esphome:
   on_boot:
@@ -94,6 +94,7 @@ script:
       - switch.turn_on: sw_relay_1
       - switch.turn_off: sw_relay_2
       - lambda: |-
+          id(cover_motion_direction) = 1; // Start opening
           id(cover_last_operation_start) = millis();
       - script.execute: cover_calibration_mark_start
   - id: cover_close
@@ -102,6 +103,7 @@ script:
       - switch.turn_on: sw_relay_2
       - switch.turn_off: sw_relay_1
       - lambda: |-
+          id(cover_motion_direction) = -1; // Start closing
           id(cover_last_operation_start) = millis();
       - script.execute: cover_calibration_mark_start
   - id: cover_stop
@@ -109,6 +111,8 @@ script:
     then:
       - switch.turn_off: sw_relay_1
       - switch.turn_off: sw_relay_2
+      - lambda: |-
+          id(cover_motion_direction) = 0; // Stop movement
       - script.execute: cover_calibration_attempt_end
 
   # Toggle style actions: Start/Stop
